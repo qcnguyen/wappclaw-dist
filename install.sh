@@ -88,8 +88,23 @@ if [ -z "$SRC" ]; then
     *) die "unknown WAPP_CHANNEL '$CHANNEL' (stable|dev)" ;;
   esac
   VERSION="${WAPP_VERSION:-$(curl -fsSL "$BASE_URL/$pointer" 2>/dev/null | tr -d '[:space:]' || true)}"
-  [ -n "$VERSION" ] || die "could not determine the latest $CHANNEL version from $BASE_URL/$pointer.
-  Set WAPP_VERSION explicitly, or download a release and run its install.sh."
+  if [ -z "$VERSION" ]; then
+    # A missing pointer almost always means "that channel has nothing published
+    # yet", not "something is broken". Say which, and name the alternative that
+    # does exist — otherwise the message sends people looking for a fault.
+    other_pointer="latest-dev"; other_channel="dev"
+    [ "$CHANNEL" = dev ] && { other_pointer="latest"; other_channel="stable"; }
+    other="$(curl -fsSL "$BASE_URL/$other_pointer" 2>/dev/null | tr -d '[:space:]' || true)"
+    if [ -n "$other" ]; then
+      die "no $CHANNEL release has been published yet.
+  The newest $other_channel build is $other. To install it:
+
+      WAPP_CHANNEL=$other_channel curl -fsSL $BASE_URL/install.sh | bash"
+    fi
+    die "could not determine the latest $CHANNEL version from $BASE_URL/$pointer.
+  Nothing is published on either channel yet. Set WAPP_VERSION explicitly, or
+  download a release and run its install.sh."
+  fi
   bold "Downloading wappclaw $VERSION ($CHANNEL)"
   curl -fsSL "$ASSET_URL/v$VERSION/wappclaw-$VERSION.tar.gz" -o "$TMP/release.tar.gz" || die "download failed."
   # Verify before unpacking: an unchecked tarball from the network is arbitrary
