@@ -2,8 +2,11 @@
 # Wappclaw installer.
 #
 #   curl -fsSL https://raw.githubusercontent.com/qcnguyen/wappclaw-dist/main/install.sh | bash
-#   WAPP_CHANNEL=dev  ... | bash    # install the newest dev build instead
-#   ./install.sh                    # from an unpacked release, no download
+#   curl -fsSL <same-url> | WAPP_CHANNEL=dev bash   # newest dev build instead
+#   ./install.sh                                    # unpacked release, no download
+#
+# Note the placement: the variable belongs on `bash`, not on `curl`. Putting it
+# before curl sets it in curl's environment and the installer never sees it.
 #
 # Installs into your HOME. It never uses sudo, never writes outside these two
 # directories, and never installs system packages — if something is missing it
@@ -12,6 +15,10 @@
 #   ~/.local/share/wappclaw/    the release, its dependencies, instance data
 #   ~/.config/wappclaw/         license key and per-instance config
 #   ~/.local/bin/wapp           the CLI
+#
+# If ~/.local/bin is not already on your PATH, one line is appended to your
+# shell profile so `wapp` works in new terminals. Opt out with
+# WAPP_NO_MODIFY_PATH=1.
 set -euo pipefail
 
 WAPP_HOME="${WAPP_HOME:-$HOME/.local/share/wappclaw}"
@@ -96,10 +103,13 @@ if [ -z "$SRC" ]; then
     [ "$CHANNEL" = dev ] && { other_pointer="latest"; other_channel="stable"; }
     other="$(curl -fsSL "$BASE_URL/$other_pointer" 2>/dev/null | tr -d '[:space:]' || true)"
     if [ -n "$other" ]; then
+      # The variable goes on `bash`, NOT on `curl`. `VAR=x curl … | bash` puts
+      # VAR in curl's environment and the script never sees it — which is what
+      # the first version of this very message told people to do.
       die "no $CHANNEL release has been published yet.
   The newest $other_channel build is $other. To install it:
 
-      WAPP_CHANNEL=$other_channel curl -fsSL $BASE_URL/install.sh | bash"
+      curl -fsSL $BASE_URL/install.sh | WAPP_CHANNEL=$other_channel bash"
     fi
     die "could not determine the latest $CHANNEL version from $BASE_URL/$pointer.
   Nothing is published on either channel yet. Set WAPP_VERSION explicitly, or
@@ -157,23 +167,96 @@ EOF
 chmod +x "$BIN_DIR/wapp"
 info "cli      $BIN_DIR/wapp"
 
+# Is the CLI actually reachable? This decides what the closing instructions can
+# tell you to type. It used to warn about PATH *before* printing "Next: wapp
+# license set …", so the warning scrolled past and the very next instruction was
+# a command the shell could not find.
+ON_PATH=0
 case ":$PATH:" in
-  *":$BIN_DIR:"*) ;;
-  *) warn "$BIN_DIR is not on your PATH. Add this to your shell profile:"
-     printf '\n      export PATH="%s:$PATH"\n\n' "$BIN_DIR" ;;
+  *":$BIN_DIR:"*) ON_PATH=1 ;;
 esac
+
+# Which file a login shell would read. Only used to tell you where to put the
+# line — nothing is edited unless you ask for it with WAPP_MODIFY_PATH=1.
+profile_file() {
+  case "${SHELL:-}" in
+    *zsh)  echo "$HOME/.zshrc" ;;
+    *fish) echo "$HOME/.config/fish/config.fish" ;;
+    *)     [ -f "$HOME/.bashrc" ] && echo "$HOME/.bashrc" || echo "$HOME/.profile" ;;
+  esac
+}
+
+# Put the CLI on PATH by default. This is the user's own shell profile in their
+# own HOME — no privileges, one line, trivially reversible — which is a very
+# different thing from installing system packages behind sudo, and it is what
+# rustup, bun, nvm and uv all do. The alternative is that every single customer
+# finishes a successful install with `wapp: command not found`.
+# Opt out with WAPP_NO_MODIFY_PATH=1.
+PATH_ADDED_TO=""
+if [ "$ON_PATH" = 0 ] && [ "${WAPP_NO_MODIFY_PATH:-0}" != 1 ]; then
+  rc="$(profile_file)"
+  # Idempotent: re-running the installer, or upgrading, must not stack up
+  # duplicate PATH entries.
+  if grep -qs "$BIN_DIR" "$rc" 2>/dev/null; then
+    PATH_ADDED_TO="$rc"
+  elif touch "$rc" 2>/dev/null; then
+    {
+      printf '\n# added by the wappclaw installer\n'
+      printf 'export PATH="%s:$PATH"\n' "$BIN_DIR"
+    } >> "$rc"
+    PATH_ADDED_TO="$rc"
+  else
+    warn "could not write to $rc — add $BIN_DIR to your PATH by hand."
+  fi
+fi
 
 echo
 bold "Installed."
+
+if [ "$ON_PATH" = 1 ]; then
+  WAPP=wapp
+elif [ -n "$PATH_ADDED_TO" ]; then
+  # It is on PATH for every new shell, but this script cannot change the
+  # environment of the shell that invoked it — no process can. So the next
+  # steps use the full path, which works right now, and say how to get the
+  # short name in this shell too.
+  WAPP="$BIN_DIR/wapp"
+  # printf, not the heredoc: a heredoc emits \033 literally rather than as an
+  # escape, so the notice printed raw characters instead of colouring.
+  printf '\n\033[33m  Added %s to your PATH in %s.\033[0m\n' "$BIN_DIR" "$PATH_ADDED_TO"
+  cat <<EOF
+
+  New terminals will find \`wapp\` automatically. For THIS one, either run:
+
+      export PATH="$BIN_DIR:\$PATH"
+
+  or use the full path below.
+EOF
+else
+  WAPP="$BIN_DIR/wapp"
+  rc="$(profile_file)"
+  printf '\n\033[33m  wapp is installed but %s is not on your PATH.\033[0m\n' "$BIN_DIR"
+  cat <<EOF
+
+  For this shell:
+
+      export PATH="$BIN_DIR:\$PATH"
+
+  To make it permanent:
+
+      echo 'export PATH="$BIN_DIR:\$PATH"' >> $rc
+EOF
+fi
+
 cat <<EOF
 
   Next:
 
-    wapp license set <your-key>     install your license
-    wapp start                      start it (chat :5173, admin :5174)
+    $WAPP license set <your-key>     install your license
+    $WAPP start                      start it (chat :5173, admin :5174)
 
   Then open the chat at http://localhost:5173 and sign Claude in from the
-  admin app, or run: wapp login
+  admin app, or run: $WAPP login
 
-  Other commands: wapp status | stop | logs | config list | doctor
+  Other commands: $WAPP status | stop | logs | config list | doctor
 EOF
