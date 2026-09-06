@@ -65,7 +65,9 @@ if have node && [ "$(printf '22.13.0\n%s\n' "$(node -v | tr -d v)" | sort -V | h
 else
   missing+=("node — need >= 22.13, found $(have node && node -v || echo 'nothing'). https://nodejs.org/en/download")
 fi
-for c in npm git lsof tar; do
+# `curl` and `base64` are runtime requirements too, not just install-time ones: the
+# agent's git-credential wrapper uses both on every authenticated git command.
+for c in npm git lsof tar curl base64; do
   have "$c" && info "$(printf '%-7s present' "$c")" || missing+=("$c — $(pkg_hint "$c")")
 done
 if [ "${#missing[@]}" -gt 0 ]; then
