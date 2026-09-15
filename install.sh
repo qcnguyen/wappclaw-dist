@@ -145,9 +145,13 @@ DEST="$WAPP_HOME/releases/$VERSION"
 mkdir -p "$DEST" "$WAPP_CONFIG" "$BIN_DIR"
 # Keep node_modules across an upgrade of the same version so a re-run is quick.
 find "$DEST" -maxdepth 1 -mindepth 1 ! -name node_modules -exec rm -rf {} +
-for item in server.mjs serve-spa.mjs license-check.mjs chat admin package.json VERSION wapp install.sh; do
-  [ -e "$SRC/$item" ] && cp -r "$SRC/$item" "$DEST/"
-done
+# Everything the archive ships, rather than a list of names: an allowlist goes
+# out of date silently, and the artifact it drops is only noticed much later by
+# whoever runs the feature that needs it (this is how `admin-password.mjs`
+# reached installed releases as "this release predates admin passwords").
+# node_modules is the one exclusion — the archive never carries one, and the
+# destination's is deliberately kept across a re-install of the same version.
+find "$SRC" -maxdepth 1 -mindepth 1 ! -name node_modules -exec cp -r {} "$DEST/" \;
 ln -sfn "$DEST" "$WAPP_HOME/current"
 info "release  $DEST"
 
