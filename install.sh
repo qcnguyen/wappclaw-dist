@@ -259,10 +259,10 @@ cat <<EOF
   Next:
 
     $WAPP license set <your-key>     install your license
-    $WAPP start                      start it (chat :5173, admin :5174)
+    $WAPP start                      start it (chat and admin on :5173)
 
-  Then open the chat at http://localhost:5173 and sign Claude in from the
-  admin app, or run: $WAPP login
+  Then open the chat at http://localhost:5173/ and sign Claude in from the
+  admin app at http://localhost:5173/admin/, or run: $WAPP login
 
   Other commands: $WAPP status | stop | logs | config list | doctor
 EOF
