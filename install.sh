@@ -10,12 +10,9 @@
 #
 # Installs into your HOME. It never uses sudo, never writes outside these two
 # directories, and never installs system packages — if something is missing it
-# tells you the command to run. (The one exception: run as root on Linux, it
-# installs the headless browser's system libraries itself.)
+# tells you the command to run.
 #
-#   ~/.local/share/wappclaw/    the release, its dependencies, instance data,
-#                               and browsers/ (the Chromium mini-app preview
-#                               tests run in; skip with WAPP_NO_BROWSER=1)
+#   ~/.local/share/wappclaw/    the release, its dependencies, instance data
 #   ~/.config/wappclaw/         license key and per-instance config
 #   ~/.local/bin/wapp           the CLI
 #
@@ -160,17 +157,6 @@ info "release  $DEST"
 
 bold "Installing runtime dependencies (~550 MB, mostly the bundled Claude binary)"
 ( cd "$DEST" && npm install --omit=dev --no-audit --no-fund )
-
-# The headless Chromium a mini-app preview's browser tests run in. One implementation, the
-# CLI's own (`wapp browser install`), so the installer, `wapp update` and `wapp doctor` agree
-# on where it lives and how to tell it works. Optional: a failure is a warning, never a failed
-# install — without it the preview tests still run their api cases.
-if [ "${WAPP_NO_BROWSER:-0}" = 1 ]; then
-  info "browser  skipped (WAPP_NO_BROWSER=1) — later: wapp browser install"
-else
-  WAPP_HOME="$WAPP_HOME" WAPP_CONFIG="$WAPP_CONFIG" "$DEST/wapp" browser install \
-    || warn "the preview test browser is not ready — see above; the rest of the install is fine."
-fi
 
 # The CLI is a tiny shim rather than a copy, so `wapp` always runs the version
 # `current` points at and an upgrade needs no second step.
