@@ -38,6 +38,30 @@ bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 info() { printf '  %s\n' "$*"; }
 warn() { printf '\033[33m  ! %s\033[0m\n' "$*" >&2; }
 die()  { printf '\033[31merror: %s\033[0m\n' "$*" >&2; exit 1; }
+
+# **The embedded Postgres needs symlinks npm cannot ship.** Its platform package
+# carries the real libraries plus native/pg-symlinks.json, and a postinstall
+# recreates the SONAME links (libicuuc.so.60 -> libicuuc.so.60.2). When npm does
+# not run dependency install scripts (ignore-scripts set, or an npm that stops
+# running them by default) the links are missing and postgres dies at load —
+# every mini-app on the built-in database fails. Run the package's own script
+# explicitly (it is idempotent), then prove the binary loads. The server
+# repairs the links itself too; this just catches it at install time.
+ensure_pg_links() {
+  local pkg bin out
+  for pkg in "$1"/node_modules/@embedded-postgres/*/; do
+    [ -f "$pkg/scripts/hydrate-symlinks.js" ] || continue
+    ( cd "$pkg" && node scripts/hydrate-symlinks.js ) >/dev/null 2>&1 || true
+  done
+  bin="$(ls -1 "$1"/node_modules/@embedded-postgres/*/native/bin/postgres 2>/dev/null | head -n1 || true)"
+  [ -n "$bin" ] || return 0
+  if out="$("$bin" --version 2>&1)"; then
+    info "postgres ${out#postgres }"
+  else
+    warn "the embedded Postgres binary does not run — mini-app databases will not start:"
+    warn "  $out"
+  fi
+}
 have() { command -v "$1" >/dev/null 2>&1; }
 
 SRC=""
@@ -157,6 +181,7 @@ info "release  $DEST"
 
 bold "Installing runtime dependencies (~550 MB, mostly the bundled Claude binary)"
 ( cd "$DEST" && npm install --omit=dev --no-audit --no-fund )
+ensure_pg_links "$DEST"
 
 # The CLI is a tiny shim rather than a copy, so `wapp` always runs the version
 # `current` points at and an upgrade needs no second step.
